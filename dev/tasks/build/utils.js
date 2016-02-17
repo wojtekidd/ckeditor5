@@ -100,7 +100,7 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 				conversionPipes.push(
 					filterTests,
 					transpileTests,
-					utils.appendBenderLauncher(),
+					format === 'amd' ? utils.appendBenderLauncher() : utils.noop(),
 					filterTests.restore
 				);
 			}
@@ -144,7 +144,7 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 			plugins: utils.getBabelPlugins( format ),
 			// Ensure that all paths ends with '.js' because Require.JS (unlike Common.JS/System.JS)
 			// will not add it to module names which look like paths.
-			resolveModuleSource: utils.appendModuleExtension
+			resolveModuleSource: format == 'cjs' ? utils.resolveModuleSource : utils.appendModuleExtension
 		};
 	},
 
@@ -157,7 +157,7 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 	getBabelOptionsForTests( format ) {
 		return {
 			plugins: utils.getBabelPlugins( format ),
-			resolveModuleSource: utils.appendModuleExtension,
+			resolveModuleSource: format == 'cjs' ? utils.resolveModuleSource : utils.appendModuleExtension,
 			moduleIds: true,
 			moduleId: 'tests'
 		};
@@ -180,7 +180,7 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 			throw new Error( `Incorrect format: ${ format }` );
 		}
 
-		return [
+		const plugins = [
 			// Note: When plugin is specified by its name, Babel loads it from a context of a
 			// currently transpiled file (in our case - e.g. from ckeditor5-core/src/foo.js).
 			// Obviously that fails, since we have all the plugins installed only in ckeditor5/
@@ -190,6 +190,13 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 			// but it works... so let's hope it will.
 			require( `babel-plugin-transform-es2015-modules-${ babelModuleTranspiler }` )
 		];
+
+		// Add additional plugins for Node.js environment.
+		if ( format == 'cjs' ) {
+			plugins.push( require( 'babel-plugin-transform-es2015-parameters' ) );
+		}
+
+		return plugins;
 	},
 
 	/**
@@ -353,6 +360,35 @@ require( [ 'tests' ], bender.defer(), function( err ) {
 	 */
 	isJSFile( file ) {
 		return file.path.endsWith( '.js' );
+	},
+
+	/**
+	 * Resolves CommonJS module source path.
+	 *
+	 * @param {String} source Module path passed to require() method.
+	 * @param {String} file Path to a file where require() method is called.
+	 * @returns {String} Fixed module path.
+	 */
+	resolveModuleSource( source, file ) {
+		// If path is relative - leave it as is.
+		if ( !path.isAbsolute( source ) ) {
+			return source;
+		}
+
+		// Find relative path of test file from cwd directory.
+		let testFile = path.relative( process.cwd(), file );
+
+		// Append `/` as all files uses it as root inside transpiled versions.
+		testFile = path.join( path.sep, testFile );
+
+		// Find relative path from test file to source.
+		let relativePath = path.relative( path.dirname( testFile ), path.dirname( source ) );
+		relativePath = path.join( relativePath, path.basename( source ) );
+
+		// Convert windows path to posix.
+		relativePath = relativePath.replace( /\\/g, '/' );
+
+		return utils.appendModuleExtension( ( relativePath.startsWith( '../' ) ? '' : './' ) + relativePath );
 	}
 };
 
