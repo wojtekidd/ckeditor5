@@ -45,7 +45,7 @@ export default class ClassicCreator extends Creator {
 		const editable = this._createEditable();
 
 		this.editor.editable = editable;
-		this.editor.ui.add( 'main', editable );
+		this.editor.ui.add( 'editable', editable );
 	}
 
 	_setupToolbar() {
